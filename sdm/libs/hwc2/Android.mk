@@ -9,7 +9,7 @@ LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_RELATIVE_PATH    := hw
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes)
-LOCAL_HEADER_LIBRARIES        := display_headers
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
 
 LOCAL_CFLAGS                  := -Wno-missing-field-initializers -Wno-unused-parameter \
                                  -std=c++11 -fcolor-diagnostics\
@@ -17,7 +17,7 @@ LOCAL_CFLAGS                  := -Wno-missing-field-initializers -Wno-unused-par
 LOCAL_CLANG                   := true
 
 LOCAL_SHARED_LIBRARIES        := libsdmcore libqservice libbinder libhardware libhardware_legacy \
-                                 libutils libcutils libsync libqdutils libqdMetaData \
+                                 libutils libcutils libsync libqdutils_sdm710 libqdMetaData_sdm710 \
                                  libsdmutils libc++ liblog libgrallocutils libui libgpu_tonemapper \
                                  libhidlbase libhidltransport vendor.display.config@1.0 \
                                  android.hardware.graphics.mapper@2.0 \

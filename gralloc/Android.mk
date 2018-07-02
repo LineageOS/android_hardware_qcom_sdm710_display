@@ -9,8 +9,8 @@ LOCAL_MODULE_RELATIVE_PATH    := hw
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes)
 
-LOCAL_HEADER_LIBRARIES        := display_headers
-LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData libsync libgrallocutils \
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
+LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData_sdm710 libsync libgrallocutils \
                                  libgralloccore \
                                  android.hardware.graphics.mapper@2.0 \
                                  android.hardware.graphics.mapper@2.1
@@ -29,8 +29,8 @@ LOCAL_MODULE                  := libgrallocutils
 LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes) $(kernel_includes)
-LOCAL_HEADER_LIBRARIES        := display_headers
-LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData libdl  \
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
+LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData_sdm710 libdl  \
                                   android.hardware.graphics.mapper@2.0 \
                                   android.hardware.graphics.mapper@2.1
 LOCAL_CFLAGS                  := $(common_flags) -DLOG_TAG=\"qdgralloc\" -Wno-sign-conversion
@@ -44,8 +44,8 @@ LOCAL_MODULE                  := libgralloccore
 LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes) $(kernel_includes)
-LOCAL_HEADER_LIBRARIES        := display_headers
-LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData libdl libgrallocutils \
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
+LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdMetaData_sdm710 libdl libgrallocutils \
                                   android.hardware.graphics.mapper@2.1
 LOCAL_CFLAGS                  := $(common_flags) -DLOG_TAG=\"qdgralloc\" -Wno-sign-conversion
 LOCAL_ADDITIONAL_DEPENDENCIES := $(common_deps)
@@ -69,11 +69,11 @@ LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_RELATIVE_PATH    := hw
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes) $(kernel_includes)
-LOCAL_HEADER_LIBRARIES        := display_headers
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
 LOCAL_SHARED_LIBRARIES        := $(common_libs) \
                                   libhidlbase \
                                   libhidltransport \
-                                  libqdMetaData \
+                                  libqdMetaData_sdm710 \
                                   libgrallocutils \
                                   libgralloccore \
                                   libsync \
@@ -89,11 +89,11 @@ LOCAL_MODULE                  := vendor.qti.hardware.display.allocator@1.0-servi
 LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_RELATIVE_PATH    := hw
 LOCAL_MODULE_TAGS             := optional
-LOCAL_HEADER_LIBRARIES        := display_headers
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
 LOCAL_SHARED_LIBRARIES        := $(common_libs) \
                                  libhidlbase \
                                  libhidltransport\
-                                 libqdMetaData \
+                                 libqdMetaData_sdm710 \
                                  libgrallocutils \
                                  libgralloccore \
                                  android.hardware.graphics.mapper@2.1 \

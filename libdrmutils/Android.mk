@@ -6,7 +6,7 @@ LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := external/libdrm \
                                  $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
-LOCAL_HEADER_LIBRARIES        := display_headers
+LOCAL_HEADER_LIBRARIES        := display_headers_sdm710
 LOCAL_SHARED_LIBRARIES        := libdrm libdl libdisplaydebug
 LOCAL_CFLAGS                  := -DLOG_TAG=\"DRMUTILS\" -Wall -std=c++11 -Werror -fno-operator-names
 LOCAL_CLANG                   := true
