@@ -16,7 +16,7 @@ LOCAL_CFLAGS                  := -Wno-missing-field-initializers -Wno-unused-par
                                  -DLOG_TAG=\"SDM\" $(common_flags)
 LOCAL_CLANG                   := true
 
-LOCAL_SHARED_LIBRARIES        := libsdmcore libqservice libbinder libhardware libhardware_legacy \
+LOCAL_SHARED_LIBRARIES        := libsdmcore libqservice_sdm710 libbinder libhardware libhardware_legacy \
                                  libutils libcutils libsync libqdutils_sdm710 libqdMetaData_sdm710 \
                                  libsdmutils libc++ liblog libgrallocutils libui libgpu_tonemapper \
                                  libhidlbase libhidltransport vendor.display.config@1.0 \
