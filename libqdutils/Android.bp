@@ -1,11 +1,11 @@
 cc_library_shared {
-    name: "libqdutils_sdm710",
+    name: "libqdutils",
     vendor: true,
     defaults: ["display_defaults"],
     header_libs: ["libhardware_headers", "libutils_headers"],
     shared_libs: [
         "libbinder",
-        "libqservice_sdm710",
+        "libqservice",
     ],
     cflags: [
         "-DLOG_TAG=\"qdutils\"",
@@ -18,7 +18,7 @@ cc_library_shared {
 }
 
 cc_library_shared {
-    name: "libqdMetaData_sdm710",
+    name: "libqdMetaData",
     vendor: true,
     defaults: ["display_defaults"],
     cflags: [
@@ -30,7 +30,7 @@ cc_library_shared {
 
 // Remove after WFD moves to use libqdMetaData directly
 cc_library_shared {
-    name: "libqdMetaData.system_sdm710",
+    name: "libqdMetaData.system",
     defaults: ["display_defaults"],
     cflags: [
         "-Wno-sign-conversion",

@@ -12,12 +12,12 @@ cc_defaults {
         "libcutils",
         "libutils",
     ],
-    header_libs: ["display_headers_sdm710"],
+    header_libs: ["display_headers"],
     clang: true,
 }
 
 cc_library_headers {
-    name: "display_headers_sdm710",
+    name: "display_headers",
     vendor_available: true,
     export_include_dirs: [
         "include",
