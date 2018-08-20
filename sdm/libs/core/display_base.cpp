@@ -118,7 +118,7 @@ DisplayError DisplayBase::Init() {
   // TODO(user): Temporary changes, to be removed when DRM driver supports
   // Partial update with Destination scaler enabled.
   SetPUonDestScaler();
-  Debug::Get()->GetProperty("sdm.drop_skewed_vsync", &drop_vsync);
+  Debug::Get()->GetProperty(DROP_SKEWED_VSYNC_PROP, &drop_vsync);
   drop_skewed_vsync_ = (drop_vsync == 1);
   return kErrorNone;
 
@@ -403,6 +403,7 @@ DisplayError DisplayBase::GetConfig(DisplayConfigFixedInfo *fixed_info) {
   fixed_info->min_luminance = fixed_info->hdr_supported ?  hw_panel_info_.blackness_level: 0;
   fixed_info->hdr_eotf = hw_panel_info_.hdr_eotf;
   fixed_info->hdr_metadata_type_one = hw_panel_info_.hdr_metadata_type_one;
+  fixed_info->partial_update = hw_panel_info_.partial_update;
 
   return kErrorNone;
 }
