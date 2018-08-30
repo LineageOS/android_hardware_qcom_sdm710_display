@@ -75,6 +75,25 @@ static HWCUEvent g_hwc_uevent_;
 Locker HWCSession::locker_[HWC_NUM_DISPLAY_TYPES];
 static const int kSolidFillDelay = 100 * 1000;
 
+// Map the known color modes to dataspace.
+static int32_t GetDataspace(ColorMode mode) {
+  switch (mode) {
+    case ColorMode::SRGB:
+    case ColorMode::NATIVE:
+      return HAL_DATASPACE_V0_SRGB;
+    case ColorMode::DCI_P3:
+      return HAL_DATASPACE_DCI_P3;
+    case ColorMode::DISPLAY_P3:
+      return HAL_DATASPACE_DISPLAY_P3;
+    case ColorMode::BT2100_PQ:
+      return HAL_DATASPACE_BT2020_PQ;
+    case ColorMode::BT2100_HLG:
+      return HAL_DATASPACE_BT2020_HLG;
+    default:
+      return HAL_DATASPACE_UNKNOWN;
+  }
+}
+
 void HWCUEvent::UEventThread(HWCUEvent *hwc_uevent) {
   const char *uevent_thread_name = "HWC_UeventThread";
 
@@ -1416,6 +1435,19 @@ android::status_t HWCSession::SetFrameDumpConfig(const android::Parcel *input_pa
   uint32_t frame_dump_count = UINT32(input_parcel->readInt32());
   std::bitset<32> bit_mask_display_type = UINT32(input_parcel->readInt32());
   uint32_t bit_mask_layer_type = UINT32(input_parcel->readInt32());
+  int32_t output_format = HAL_PIXEL_FORMAT_RGB_888;
+  bool post_processed = true;
+
+  // Read optional user preferences: output_format and post_processed.
+  if (input_parcel->dataPosition() != input_parcel->dataSize()) {
+    // HAL Pixel Format for output buffer
+    output_format = input_parcel->readInt32();
+  }
+  if (input_parcel->dataPosition() != input_parcel->dataSize()) {
+    // Option to dump Layer Mixer output (0) or DSPP output (1)
+    post_processed = (input_parcel->readInt32() != 0);
+  }
+
   android::status_t status = 0;
 
   for (uint32_t disp_id = HWC_DISPLAY_PRIMARY; disp_id < HWC_NUM_DISPLAY_TYPES; disp_id++) {
@@ -1423,7 +1455,8 @@ android::status_t HWCSession::SetFrameDumpConfig(const android::Parcel *input_pa
       SEQUENCE_WAIT_SCOPE_LOCK(locker_[disp_id]);
       if (hwc_display_[disp_id]) {
         HWC2::Error error;
-        error = hwc_display_[disp_id]->SetFrameDumpConfig(frame_dump_count, bit_mask_layer_type);
+        error = hwc_display_[disp_id]->SetFrameDumpConfig(frame_dump_count, bit_mask_layer_type,
+                                                          output_format, post_processed);
         if (HWC2::Error::None != error) {
           if (HWC2::Error::NoResources == error)
             status = -ENOMEM;
@@ -2041,10 +2074,16 @@ int32_t HWCSession::GetReadbackBufferAttributes(hwc2_device_t *device, hwc2_disp
     return HWC2_ERROR_BAD_DISPLAY;
   }
 
-  *format = HAL_PIXEL_FORMAT_RGB_888;
-  *dataspace = HAL_DATASPACE_V0_SRGB;  // ((STANDARD_BT709 | TRANSFER_SRGB) | RANGE_FULL)
+  HWCSession *hwc_session = static_cast<HWCSession *>(device);
+  HWCDisplay *hwc_display = hwc_session->hwc_display_[display];
 
-  return HWC2_ERROR_NONE;
+  if (hwc_display) {
+    *format = HAL_PIXEL_FORMAT_RGB_888;
+    *dataspace = GetDataspace(hwc_display->GetCurrentColorMode());
+    return HWC2_ERROR_NONE;
+  }
+
+  return HWC2_ERROR_BAD_DISPLAY;
 }
 
 int32_t HWCSession::SetReadbackBuffer(hwc2_device_t *device, hwc2_display_t display,

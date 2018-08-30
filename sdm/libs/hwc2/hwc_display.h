@@ -121,7 +121,8 @@ class HWCDisplay : public DisplayEventHandler {
 
   // Framebuffer configurations
   virtual void SetIdleTimeoutMs(uint32_t timeout_ms);
-  virtual HWC2::Error SetFrameDumpConfig(uint32_t count, uint32_t bit_mask_layer_type);
+  virtual HWC2::Error SetFrameDumpConfig(uint32_t count, uint32_t bit_mask_layer_type,
+                                         int32_t format, bool post_processed);
   virtual DisplayError SetMaxMixerStages(uint32_t max_mixer_stages);
   virtual DisplayError ControlPartialUpdate(bool enable, uint32_t *pending) {
     return kErrorNotSupported;
@@ -192,6 +193,7 @@ class HWCDisplay : public DisplayEventHandler {
   bool IsSkipValidateState() { return (validate_state_ == kSkipValidate); }
   bool IsInternalValidateState() { return (validated_ && (validate_state_ == kInternalValidate)); }
   void SetValidationState(DisplayValidateState state) { validate_state_ = state; }
+  ColorMode GetCurrentColorMode() { return current_color_mode_; }
 
   // HWC2 APIs
   virtual HWC2::Error AcceptDisplayChanges(void);
@@ -280,8 +282,7 @@ class HWCDisplay : public DisplayEventHandler {
   void MarkLayersForClientComposition(void);
   virtual void ApplyScanAdjustment(hwc_rect_t *display_frame);
   uint32_t GetUpdatingLayersCount(void);
-  bool IsSurfaceUpdated(const std::vector<LayerRect> &dirty_regions);
-  bool IsLayerUpdating(const Layer *layer);
+  bool IsLayerUpdating(HWCLayer *layer);
   uint32_t SanitizeRefreshRate(uint32_t req_refresh_rate);
   virtual void GetUnderScanConfig() { }
 
@@ -344,12 +345,15 @@ class HWCDisplay : public DisplayEventHandler {
  private:
   void DumpInputBuffers(void);
   void UpdateRefreshRate();
+  bool CanSkipSdmPrepare(uint32_t *num_types, uint32_t *num_requests);
+
   qService::QService *qservice_ = NULL;
   DisplayClass display_class_;
   uint32_t geometry_changes_ = GeometryChanges::kNone;
   bool animating_ = false;
   bool has_client_composition_ = false;
   DisplayValidateState validate_state_ = kNormalValidate;
+  bool partial_update_enabled_ = false;
 };
 
 inline int HWCDisplay::Perform(uint32_t operation, ...) {
