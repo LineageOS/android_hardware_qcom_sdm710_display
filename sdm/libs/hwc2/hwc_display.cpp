@@ -546,7 +546,8 @@ void HWCDisplay::BuildLayerStack() {
       layer_stack_.flags.hdr_present = true;
     }
 
-    if (hwc_layer->IsNonIntegralSourceCrop() && !is_secure && !is_video) {
+    if (hwc_layer->IsNonIntegralSourceCrop() && !is_secure && !layer->flags.solid_fill &&
+        !is_video) {
       layer->flags.skip = true;
     }
 
