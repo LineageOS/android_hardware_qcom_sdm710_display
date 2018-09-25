@@ -455,6 +455,11 @@ static int32_t GetRenderIntents(hwc2_device_t *device, hwc2_display_t display,
   if (out_num_intents == nullptr) {
     return HWC2_ERROR_BAD_PARAMETER;
   }
+
+  if (mode < ColorMode::NATIVE || mode > ColorMode::BT2100_HLG) {
+    DLOGE("Invalid ColorMode: %d", mode);
+    return HWC2_ERROR_BAD_PARAMETER;
+  }
   return HWCSession::CallDisplayFunction(device, display, &HWCDisplay::GetRenderIntents, mode,
                                          out_num_intents, out_intents);
 }
@@ -557,12 +562,14 @@ static int32_t GetDisplayType(hwc2_device_t *device, hwc2_display_t display, int
   return HWCSession::CallDisplayFunction(device, display, &HWCDisplay::GetDisplayType, out_type);
 }
 
-static int32_t GetDozeSupport(hwc2_device_t *device, hwc2_display_t display, int32_t *out_support) {
+int32_t HWCSession::GetDozeSupport(hwc2_device_t *device, hwc2_display_t display,
+                                  int32_t *out_support) {
   if (!device || !out_support) {
     return HWC2_ERROR_BAD_PARAMETER;
   }
 
-  if (display >= HWC_NUM_DISPLAY_TYPES) {
+  HWCSession *hwc_session = static_cast<HWCSession *>(device);
+  if (display >= HWC_NUM_DISPLAY_TYPES || (hwc_session->hwc_display_[display] == nullptr) ) {
     return HWC2_ERROR_BAD_DISPLAY;
   }
 
@@ -606,7 +613,7 @@ int32_t HWCSession::PresentDisplay(hwc2_device_t *device, hwc2_display_t display
   auto status = HWC2::Error::BadDisplay;
   DTRACE_SCOPED();
 
-  if (display >= HWC_NUM_DISPLAY_TYPES) {
+  if (display >= HWC_NUM_DISPLAY_TYPES || (hwc_session->hwc_display_[display] == nullptr)) {
     return HWC2_ERROR_BAD_DISPLAY;
   }
 
@@ -621,9 +628,7 @@ int32_t HWCSession::PresentDisplay(hwc2_device_t *device, hwc2_display_t display
     }
 
     // TODO(user): Handle virtual display/HDMI concurrency
-    if (hwc_session->hwc_display_[display]) {
-      status = hwc_session->PresentDisplayInternal(display, out_retire_fence);
-    }
+    status = hwc_session->PresentDisplayInternal(display, out_retire_fence);
   }
 
   if (status != HWC2::Error::None && status != HWC2::Error::NotValidated) {
@@ -700,6 +705,11 @@ int32_t HWCSession::SetColorModeWithRenderIntent(hwc2_device_t *device, hwc2_dis
     return HWC2_ERROR_BAD_PARAMETER;
   }
   auto render_intent = static_cast<RenderIntent>(int_render_intent);
+  if ((render_intent < RenderIntent::COLORIMETRIC) ||
+      (render_intent > RenderIntent::TONE_MAP_ENHANCE)) {
+    DLOGE("Invalid RenderIntent: %d", render_intent);
+    return HWC2_ERROR_BAD_PARAMETER;
+  }
   return HWCSession::CallDisplayFunction(device, display, &HWCDisplay::SetColorModeWithRenderIntent,
                                          mode, render_intent);
 }
@@ -837,12 +847,27 @@ int32_t HWCSession::SetPowerMode(hwc2_device_t *device, hwc2_display_t display, 
 
   //  all displays support on/off. Check for doze modes
   int support = 0;
-  GetDozeSupport(device, display, &support);
+
+  auto status = GetDozeSupport(device, display, &support);
+  if (status != HWC2_ERROR_NONE) {
+    return INT32(status);
+  }
+
   if (!support && (mode == HWC2::PowerMode::Doze || mode == HWC2::PowerMode::DozeSuspend)) {
     return HWC2_ERROR_UNSUPPORTED;
   }
 
-  return CallDisplayFunction(device, display, &HWCDisplay::SetPowerMode, mode);
+  auto error = CallDisplayFunction(device, display, &HWCDisplay::SetPowerMode, mode);
+  if (error != HWC2_ERROR_NONE) {
+    return error;
+  }
+  // Reset idle pc ref count on suspend, as we enable idle pc during suspend.
+  if (mode == HWC2::PowerMode::Off) {
+    HWCSession *hwc_session = static_cast<HWCSession *>(device);
+    hwc_session->idle_pc_ref_cnt_ = 0;
+  }
+
+  return HWC2_ERROR_NONE;
 }
 
 static int32_t SetVsyncEnabled(hwc2_device_t *device, hwc2_display_t display, int32_t int_enabled) {
@@ -1322,6 +1347,14 @@ android::status_t HWCSession::notifyCallback(uint32_t command, const android::Pa
       output_parcel->writeInt32(getComposerStatus());
       break;
 
+    case qService::IQService::SET_IDLE_PC:
+      if (!input_parcel) {
+        DLOGE("QService command = %d: input_parcel needed.", command);
+        break;
+      }
+      status = SetIdlePC(input_parcel);
+      break;
+
     default:
       DLOGW("QService command = %d is not supported.", command);
       break;
@@ -1506,6 +1539,11 @@ android::status_t HWCSession::SetColorModeOverride(const android::Parcel *input_
   auto mode = static_cast<ColorMode>(input_parcel->readInt32());
   auto device = static_cast<hwc2_device_t *>(this);
 
+  if (mode < ColorMode::NATIVE || mode > ColorMode::BT2100_HLG) {
+    DLOGE("Invalid ColorMode: %d", mode);
+    return HWC2_ERROR_BAD_PARAMETER;
+  }
+
   auto err = CallDisplayFunction(device, display, &HWCDisplay::SetColorMode, mode);
   if (err != HWC2_ERROR_NONE)
     return -EINVAL;
@@ -1519,6 +1557,16 @@ android::status_t HWCSession::SetColorModeWithRenderIntentOverride(
   auto mode = static_cast<ColorMode>(input_parcel->readInt32());
   auto intent = static_cast<RenderIntent>(input_parcel->readInt32());
   auto device = static_cast<hwc2_device_t *>(this);
+
+  if (mode < ColorMode::NATIVE || mode > ColorMode::BT2100_HLG) {
+    DLOGE("Invalid ColorMode: %d", mode);
+    return HWC2_ERROR_BAD_PARAMETER;
+  }
+
+  if (intent < RenderIntent::COLORIMETRIC || intent > RenderIntent::TONE_MAP_ENHANCE) {
+    DLOGE("Invalid RenderIntent: %d", intent);
+    return HWC2_ERROR_BAD_PARAMETER;
+  }
 
   auto err =
       CallDisplayFunction(device, display, &HWCDisplay::SetColorModeWithRenderIntent, mode, intent);
@@ -2012,14 +2060,6 @@ int HWCSession::CreateExternalDisplay(int disp_id, uint32_t primary_width,
                                      use_primary_res, &hwc_display_[disp_id]);
 }
 
-#ifdef DISPLAY_CONFIG_1_1
-// Methods from ::vendor::hardware::display::config::V1_1::IDisplayConfig follow.
-Return<int32_t> HWCSession::setDisplayAnimating(uint64_t display_id, bool animating ) {
-  return CallDisplayFunction(static_cast<hwc2_device_t *>(this), display_id,
-                             &HWCDisplay::SetDisplayAnimating, animating);
-}
-#endif
-
 HWC2::Error HWCSession::ValidateDisplayInternal(hwc2_display_t display, uint32_t *out_num_types,
                                                 uint32_t *out_num_requests) {
   HWCDisplay *hwc_display = hwc_display_[display];
@@ -2117,6 +2157,37 @@ int32_t HWCSession::GetReadbackBufferFence(hwc2_device_t *device, hwc2_display_t
   }
 
   return CallDisplayFunction(device, display, &HWCDisplay::GetReadbackBufferFence, release_fence);
+}
+
+android::status_t HWCSession::SetIdlePC(const android::Parcel *input_parcel) {
+  auto enable = input_parcel->readInt32();
+  auto synchronous = input_parcel->readInt32();
+
+#ifdef DISPLAY_CONFIG_1_3
+  return static_cast<android::status_t>(controlIdlePowerCollapse(enable, synchronous));
+#else
+  {
+    SEQUENCE_WAIT_SCOPE_LOCK(locker_[HWC_DISPLAY_PRIMARY]);
+    if (hwc_display_[HWC_DISPLAY_PRIMARY]) {
+      DLOGE("Primary display is not ready");
+      return -EINVAL;
+    }
+    auto error = hwc_display_[HWC_DISPLAY_PRIMARY]->ControlIdlePowerCollapse(enable, synchronous);
+    if (error != HWC2::Error::None) {
+      return -EINVAL;
+    }
+    if (!enable) {
+      Refresh(HWC_DISPLAY_PRIMARY);
+      int32_t error = locker_[HWC_DISPLAY_PRIMARY].WaitFinite(kCommitDoneTimeoutMs);
+      if (error == ETIMEDOUT) {
+        DLOGE("Timed out!! Next frame commit done event not received!!");
+        return error;
+      }
+    }
+    DLOGI("Idle PC %s!!", enable ? "enabled" : "disabled");
+  }
+  return 0;
+#endif
 }
 
 }  // namespace sdm
