@@ -29,7 +29,6 @@
 
 #include <log/log.h>
 #include <algorithm>
-#include <cutils/properties.h>
 #include <vector>
 
 #include "gr_allocator.h"
@@ -213,12 +212,7 @@ int Allocator::GetImplDefinedFormat(uint64_t usage, int format) {
       if (format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
         gr_format = HAL_PIXEL_FORMAT_NV21_ZSL;  // NV21
       } else {
-        char prop[PROPERTY_VALUE_MAX];
-        property_get("vendor.gralloc.ImplDefinedCameraOutput.nv21", prop, "0");
-        if(atoi(prop) > 0)
-            gr_format = HAL_PIXEL_FORMAT_YCrCb_420_SP_VENUS;  // NV21 preview
-        else
-            gr_format = HAL_PIXEL_FORMAT_YCbCr_420_SP_VENUS;  // NV12 preview
+        gr_format = HAL_PIXEL_FORMAT_YCrCb_420_SP_VENUS;  // NV21 preview
       }
     } else if (usage & BufferUsage::COMPOSER_OVERLAY) {
       // XXX: If we still haven't set a format, default to RGBA8888
