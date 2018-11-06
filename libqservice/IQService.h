@@ -79,6 +79,7 @@ public:
         GET_COMPOSER_STATUS = 37, // Get composer init status-true if primary display init is done
         SET_COLOR_MODE_WITH_RENDER_INTENT = 38,
         SET_IDLE_PC = 39, // Enable/disable Idle power collapse
+        SET_WHITE_POINT_COMPENSATION = 399, // Enable/disable white point compensation
         COMMAND_LIST_END = 400,
     };
 
