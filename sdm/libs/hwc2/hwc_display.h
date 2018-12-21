@@ -73,6 +73,7 @@ class HWCColorMode {
   HWC2::Error RestoreColorTransform();
   PrimariesTransfer  GetWorkingColorSpace();
   ColorMode GetCurrentColorMode() { return current_color_mode_; }
+  HWC2::Error SetWhitePointCompensation(bool enabled);
 
  private:
   static const uint32_t kColorTransformMatrixCount = 16;
@@ -97,6 +98,65 @@ class HWCColorMode {
                                                        0.0, 1.0, 0.0, 0.0, \
                                                        0.0, 0.0, 1.0, 0.0, \
                                                        0.0, 0.0, 0.0, 1.0 };
+  /*
+   * Transform matrix is 4 x 4
+   *  |r.r   r.g   r.b  0|
+   *  |g.r   g.g   g.b  0|
+   *  |b.r   b.g   b.b  0|
+   *  |T.r   T.g   T.b  1|
+   *   R_out = R_in * r.r + G_in * g.r + B_in * b.r + Tr
+   *   G_out = R_in * r.g + G_in * g.g + B_in * b.g + Tg
+   *   B_out = R_in * r.b + G_in * g.b + B_in * b.b + Tb
+   *
+   * Cr, Cg, Cb for white point compensation
+   *  |r.r*Cr   r.g*Cg   r.b*Cb  0|
+   *  |g.r*Cr   g.g*Cg   g.b*Cb  0|
+   *  |b.r*Cr   b.g*Cg   b.b*Cb  0|
+   *  |T.r*Cr   T.g*Cg   T.b*Cb  1|
+   *   R_out = R_in * r.r * Cr + G_in * g.r * Cr + B_in * b.r * Cr + Tr * Cr
+   *   G_out = R_in * r.g * Cg + G_in * g.g * Cg + B_in * b.g * Cg + Tg * Cg
+   *   B_out = R_in * r.b * Cb + G_in * g.b * Cb + B_in * b.b * Cb + Tb * Cb
+   */
+  static constexpr int kCompensatedMaxRGB = 255;
+  static constexpr int kCompensatedMinRGB = 230;
+  static constexpr int kCompensatedCoefficientElements = 9;
+  double white_point_compensated_color_matrix_[kColorTransformMatrixCount] = {
+                                                       1.0, 0.0, 0.0, 0.0, \
+                                                       0.0, 1.0, 0.0, 0.0, \
+                                                       0.0, 0.0, 1.0, 0.0, \
+                                                       0.0, 0.0, 0.0, 1.0 };
+  bool PaserWhitePointCompensatedData();
+  float white_point_compensated_Coefficients_[kCompensatedCoefficientElements] = {
+                                                               1.0, 1.0, 1.0, \
+                                                               1.0, 1.0, 1.0, \
+                                                               1.0, 1.0, 1.0 };
+
+  bool GetWhitePointCompensatedCoefficients();
+  bool NeedWhitePointCompensated() { return (current_render_intent_ == RenderIntent::ENHANCE) &&
+                                                                       white_point_compensated_; }
+  double * GetTransferMatrix() { return NeedWhitePointCompensated() ? white_point_compensated_color_matrix_
+                                                                      : color_matrix_;}
+  bool   white_point_compensated_ = false;
+  double compensated_red_ratio_ = 1.0;
+  double compensated_green_ratio_ = 1.0;
+  double compensated_blue_ratio_ = 1.0;
+  inline static constexpr int CheckCompensatedRGB (int value) {
+      return ((value < kCompensatedMinRGB) ? kCompensatedMinRGB :
+              (value > kCompensatedMaxRGB) ? kCompensatedMaxRGB : value);
+  }
+
+  void ApplyWhitePointCompensationToMatrix(double *out, double *in) {
+    for (uint32_t i = 0; i < kColorTransformMatrixCount; i++) {
+       if ((i % 4) == 0)
+         out[i] = compensated_red_ratio_ * in[i];
+       else if ((i % 4) == 1)
+         out[i] = compensated_green_ratio_ * in[i];
+       else if ((i % 4) == 2)
+         out[i] = compensated_blue_ratio_ * in[i];
+       else if ((i % 4) == 3)
+         out[i] = in[i];
+    }
+  }
 };
 
 class HWCDisplay : public DisplayEventHandler {
@@ -202,6 +262,7 @@ class HWCDisplay : public DisplayEventHandler {
   virtual HWC2::Error SetClientTarget(buffer_handle_t target, int32_t acquire_fence,
                                       int32_t dataspace, hwc_region_t damage);
   virtual HWC2::Error SetColorMode(ColorMode mode) { return HWC2::Error::Unsupported; }
+  virtual HWC2::Error SetWhitePointCompensation(bool enabled) { return HWC2::Error::Unsupported; }
   virtual HWC2::Error SetColorModeWithRenderIntent(ColorMode mode, RenderIntent intent) {
     return HWC2::Error::Unsupported;
   }
