@@ -343,10 +343,10 @@ HWC2::Error HWCDisplayPrimary::SetColorMode(ColorMode mode) {
   return SetColorModeWithRenderIntent(mode, RenderIntent::COLORIMETRIC);
 }
 
-HWC2::Error HWCDisplayPrimary::SetWhitePointCompensation(bool enabled) {
-  auto status = color_mode_->SetWhitePointCompensation(enabled);
+HWC2::Error HWCDisplayPrimary::SetWhiteCompensation(bool enabled) {
+  auto status = color_mode_->SetWhiteCompensation(enabled);
   if (status != HWC2::Error::None) {
-    DLOGE("failed for SetWhitePointCompensation to %d", enabled);
+    DLOGE("failed for SetWhiteCompensation to %d", enabled);
     return status;
   }
 
