@@ -54,8 +54,7 @@ HWCColorMode::HWCColorMode(DisplayInterface *display_intf) : display_intf_(displ
 
 HWC2::Error HWCColorMode::Init() {
   PopulateColorModes();
-  if (GetWhitePointCompensatedCoefficients())
-    white_point_compensated_ = PaserWhitePointCompensatedData();
+  InitColorCompensation();
   return ApplyDefaultColorMode();
 }
 
@@ -145,23 +144,9 @@ HWC2::Error HWCColorMode::SetColorModeById(int32_t color_mode_id) {
   return HWC2::Error::None;
 }
 
-HWC2::Error HWCColorMode::SetWhitePointCompensation(bool enabled) {
-  white_point_compensated_ = enabled;
-  if (white_point_compensated_) {
-    PaserWhitePointCompensatedData();
-    ApplyWhitePointCompensationToMatrix(white_point_compensated_color_matrix_, color_matrix_);
-  }
-
-  RestoreColorTransform();
-
-  DLOGI("Set White Point Compensation: %d", enabled);
-  return HWC2::Error::None;
-}
-
 HWC2::Error HWCColorMode::RestoreColorTransform() {
-
-  DisplayError error = display_intf_->SetColorTransform(kColorTransformMatrixCount,
-                                                        GetTransferMatrix());
+  DisplayError error =
+      display_intf_->SetColorTransform(kColorTransformMatrixCount, PickTransferMatrix());
   if (error != kErrorNone) {
     DLOGE("Failed to set Color Transform");
     return HWC2::Error::BadParameter;
@@ -170,105 +155,227 @@ HWC2::Error HWCColorMode::RestoreColorTransform() {
   return HWC2::Error::None;
 }
 
-bool HWCColorMode::PaserWhitePointCompensatedData() {
-    static constexpr char kWhitePointCalibrationDataPath[] = "/persist/display/calibrated_rgb";
-    FILE *fp = fopen(kWhitePointCalibrationDataPath, "r");
-    int compensated_red = 0;
-    int compensated_green = 0;
-    int compensated_blue = 0;
-
-    if (!fp) {
-      compensated_red_ratio_ = 1.0;
-      compensated_green_ratio_ = 1.0;
-      compensated_blue_ratio_ = 1.0;
-      return false;
-    }
-
-    fscanf(fp, "%d %d %d", &compensated_red, &compensated_green, &compensated_blue);
-
-    fclose(fp);
-
-    // r = r_coeffient2 * R^2 + r_coeffient1 * R + r_coeffient0
-    // g = g_coeffient2 * G^2 + g_coeffient1 * G + g_coeffient0
-    // b = b_coeffient2 * B^2 + b_coeffient1 * B + b_coeffient0
-    // r_ratio = r/kCompensatedMaxRGB
-    // g_ratio = g/kCompensatedMaxRGB
-    // b_ratio = b/kCompensatedMaxRGB
-    auto rgb_ratio = [=](int rgb, float c2, float c1, float c0) {
-                              return ((c2 * rgb * rgb + c1 * rgb + c0) / kCompensatedMaxRGB);};
-
-    compensated_red_ratio_ = rgb_ratio(CheckCompensatedRGB(compensated_red), white_point_compensated_Coefficients_[0],
-                                           white_point_compensated_Coefficients_[1], white_point_compensated_Coefficients_[2]);
-    compensated_green_ratio_ = rgb_ratio(CheckCompensatedRGB(compensated_green), white_point_compensated_Coefficients_[3],
-                                           white_point_compensated_Coefficients_[4], white_point_compensated_Coefficients_[5]);
-    compensated_blue_ratio_ = rgb_ratio(CheckCompensatedRGB(compensated_blue), white_point_compensated_Coefficients_[6],
-                                           white_point_compensated_Coefficients_[7], white_point_compensated_Coefficients_[8]);
-    return true;
+void HWCColorMode::InitColorCompensation() {
+  char value[kPropertyMax] = {0};
+  if (Debug::Get()->GetProperty(ADAPTIVE_WHITE_COEFFICIENT_PROP, value) == kErrorNone) {
+    adaptive_white_ = std::make_unique<WhiteCompensation>(string(value));
+    adaptive_white_->SetEnabled(true);
+  }
+  std::memset(value, 0, sizeof(value));
+  if (Debug::Get()->GetProperty(ADAPTIVE_SATURATION_PARAMETER_PROP, value) == kErrorNone) {
+    adaptive_saturation_ = std::make_unique<SaturationCompensation>(string(value));
+    adaptive_saturation_->SetEnabled(true);
+  }
 }
 
-bool HWCColorMode::GetWhitePointCompensatedCoefficients() {
-  char value[kPropertyMax] = {};
-  if (Debug::Get()->GetProperty(WHITE_POINT_COMPENSATED_COEFFICIENT_PROP, value) != kErrorNone) {
-    DLOGW("Undefined Compensated Coefficients");
-    return false;
+const double *HWCColorMode::PickTransferMatrix() {
+  double matrix[kColorTransformMatrixCount] = {0};
+  if (current_render_intent_ == RenderIntent::ENHANCE) {
+    CopyColorTransformMatrix(color_matrix_, matrix);
+    if (HasSaturationCompensation())
+      adaptive_saturation_->ApplyToMatrix(matrix);
+
+    if (HasWhiteCompensation())
+      adaptive_white_->ApplyToMatrix(matrix);
+
+    CopyColorTransformMatrix(matrix, compensated_color_matrix_);
+    return compensated_color_matrix_;
+  } else {
+    return color_matrix_;
+  }
+}
+
+HWC2::Error HWCColorMode::SetWhiteCompensation(bool enabled) {
+  if (adaptive_white_ == NULL)
+    return HWC2::Error::Unsupported;
+
+  if (adaptive_white_->SetEnabled(enabled) != HWC2::Error::None) {
+    return HWC2::Error::NotValidated;
   }
 
-  std::string value_string(value);
-  std::size_t start = 0, end = 0;
-  int index = 0;
-  // We need 9 coneffients, 3 for red, 3 for green, 3 for blue.
-  float CompensatedCoefficients[kCompensatedCoefficientElements] = { 1.0, 1.0, 1.0, \
-                                                                     1.0, 1.0, 1.0, \
-                                                                     1.0, 1.0, 1.0 };
+  RestoreColorTransform();
 
-  // The property must have kCompensatedCoefficientElements delimited by commas
-  while ((end = value_string.find(",", start)) != std::string::npos) {
-    CompensatedCoefficients[index] = std::stof(value_string.substr(start, end - start));
-    start = end + 1;
+  DLOGI("Set White Point Compensation: %d", enabled);
+  return HWC2::Error::None;
+}
+
+HWC2::Error HWCColorMatrix::SetEnabled(bool enabled) {
+  enabled_ = enabled;
+  return HWC2::Error::None;
+}
+
+bool HWCColorMatrix::ParseFloatValueByCommas(const string &values, uint32_t length,
+                                             std::vector<float> &elements) const {
+  std::istringstream data_stream(values);
+  string data;
+  uint32_t index = 0;
+  std::vector<float> temp_elements;
+  while (std::getline(data_stream, data, ',')) {
+    temp_elements.push_back(std::move(std::stof(data.c_str())));
     index++;
-    if (index > kCompensatedCoefficientElements - 1) {
-      DLOGW("Over Compensated Coefficients defined");
-      return false;
-    }
   }
+  if (index != length) {
+    DLOGW("Insufficient elements defined");
+    return false;
+  }
+  std::move(temp_elements.begin(), temp_elements.end(), elements.begin());
+  return true;
+}
 
-  if (index < kCompensatedCoefficientElements - 1) {
-    DLOGW("Less Compensated Coefficients defined");
+HWC2::Error WhiteCompensation::SetEnabled(bool enabled) {
+  //re-parse data when set enabled for retry calibration
+  if (enabled) {
+    if (!ConfigCoefficients() || !ParseWhiteCompensatedData()) {
+      enabled_ = false;
+      DLOGE("Failed to WhiteCompensation Set");
+      return HWC2::Error::NotValidated;
+    }
+    CalculateRGBRatio();
+  }
+  enabled_ = enabled;
+  return HWC2::Error::None;
+}
+
+bool WhiteCompensation::ParseWhiteCompensatedData() {
+  static constexpr char kWhitePointCalibrationDataPath[] = "/persist/display/calibrated_rgb";
+  FILE *fp = fopen(kWhitePointCalibrationDataPath, "r");
+  int ret;
+
+  if (!fp) {
+    DLOGW("Failed to open white compensated data file");
     return false;
   }
 
-  CompensatedCoefficients[index] = std::stof(value_string.substr(start, end - start));
+  ret = fscanf(fp, "%d %d %d", &compensated_red_, &compensated_green_, &compensated_blue_);
+  fclose(fp);
 
-  for (int32_t i = 0; i < kCompensatedCoefficientElements; i++) {
-    white_point_compensated_Coefficients_[i] = CompensatedCoefficients[i];
-    DLOGD("CompensatedCoefficients[%d]=%f",i, CompensatedCoefficients[i]);
+  if ((ret == kNumOfCompensationData) && CheckCompensatedRGB(compensated_red_) &&
+      CheckCompensatedRGB(compensated_green_) && CheckCompensatedRGB(compensated_blue_)) {
+    DLOGD("Compensated RGB: %d %d %d", compensated_red_, compensated_green_, compensated_blue_);
+    return true;
+  } else {
+    compensated_red_ = kCompensatedMaxRGB;
+    compensated_green_ = kCompensatedMaxRGB;
+    compensated_blue_ = kCompensatedMaxRGB;
+    DLOGE("Failed to get white compensated data");
+    return false;
+  }
+}
+
+bool WhiteCompensation::ConfigCoefficients() {
+  std::vector<float> CompensatedCoefficients(kCoefficientElements);
+  if (!ParseFloatValueByCommas(key_values_, kCoefficientElements, CompensatedCoefficients))
+    return false;
+  std::move(CompensatedCoefficients.begin(), CompensatedCoefficients.end(),
+            white_compensated_Coefficients_);
+  for (const auto &c : white_compensated_Coefficients_) {
+    DLOGD("white_compensated_Coefficients_=%f", c);
   }
   return true;
+}
+
+void WhiteCompensation::CalculateRGBRatio() {
+  // r = r_coeffient2 * R^2 + r_coeffient1 * R + r_coeffient0
+  // g = g_coeffient2 * G^2 + g_coeffient1 * G + g_coeffient0
+  // b = b_coeffient2 * B^2 + b_coeffient1 * B + b_coeffient0
+  // r_ratio = r/kCompensatedMaxRGB
+  // g_ratio = g/kCompensatedMaxRGB
+  // b_ratio = b/kCompensatedMaxRGB
+  auto rgb_ratio = [=](int rgb, float c2, float c1, float c0) {
+    return ((c2 * rgb * rgb + c1 * rgb + c0) / kCompensatedMaxRGB);
+  };
+
+  compensated_red_ratio_ =
+      rgb_ratio(compensated_red_, white_compensated_Coefficients_[0],
+                white_compensated_Coefficients_[1], white_compensated_Coefficients_[2]);
+  compensated_green_ratio_ =
+      rgb_ratio(compensated_green_, white_compensated_Coefficients_[3],
+                white_compensated_Coefficients_[4], white_compensated_Coefficients_[5]);
+  compensated_blue_ratio_ =
+      rgb_ratio(compensated_blue_, white_compensated_Coefficients_[6],
+                white_compensated_Coefficients_[7], white_compensated_Coefficients_[8]);
+  DLOGI("Compensated ratio %f %f %f", compensated_red_ratio_, compensated_green_ratio_,
+        compensated_blue_ratio_);
+}
+
+void WhiteCompensation::ApplyToMatrix(double *in) {
+  double matrix[kColorTransformMatrixCount] = {0};
+  for (uint32_t i = 0; i < kColorTransformMatrixCount; i++) {
+    if ((i % 4) == 0)
+      matrix[i] = compensated_red_ratio_ * in[i];
+    else if ((i % 4) == 1)
+      matrix[i] = compensated_green_ratio_ * in[i];
+    else if ((i % 4) == 2)
+      matrix[i] = compensated_blue_ratio_ * in[i];
+    else if ((i % 4) == 3)
+      matrix[i] = in[i];
+  }
+  std::move(&matrix[0], &matrix[kColorTransformMatrixCount - 1], in);
+}
+
+HWC2::Error SaturationCompensation::SetEnabled(bool enabled) {
+  if (enabled == enabled_)
+    return HWC2::Error::None;
+
+  if (enabled) {
+    if (!ConfigSaturationParameter()) {
+      enabled_ = false;
+      return HWC2::Error::NotValidated;
+    }
+  }
+  enabled_ = enabled;
+  return HWC2::Error::None;
+}
+
+bool SaturationCompensation::ConfigSaturationParameter() {
+  std::vector<float> SaturationParameter(kSaturationParameters);
+  if (!ParseFloatValueByCommas(key_values_, kSaturationParameters, SaturationParameter))
+    return false;
+
+  int32_t matrix_index = 0;
+  for (uint32_t i = 0; i < SaturationParameter.size(); i++) {
+    saturated_matrix_[matrix_index] = SaturationParameter.at(i);
+    // Put parameters to matrix and keep the last row/column identity
+    if ((i + 1) % 3 == 0) {
+      matrix_index += 2;
+    } else {
+      matrix_index++;
+    }
+    DLOGD("SaturationParameter[%d]=%f", i, SaturationParameter.at(i));
+  }
+  return true;
+}
+
+void SaturationCompensation::ApplyToMatrix(double *in) {
+  double matrix[kColorTransformMatrixCount] = {0};
+  // 4 x 4 matrix multiplication
+  for (uint32_t i = 0; i < kNumOfRows; i++) {
+    for (uint32_t j = 0; j < kColumnsPerRow; j++) {
+      for (uint32_t k = 0; k < kColumnsPerRow; k++) {
+        matrix[j + (i * kColumnsPerRow)] +=
+            saturated_matrix_[k + (i * kColumnsPerRow)] * in[j + (k * kColumnsPerRow)];
+      }
+    }
+  }
+  std::move(&matrix[0], &matrix[kColorTransformMatrixCount - 1], in);
 }
 
 HWC2::Error HWCColorMode::SetColorTransform(const float *matrix,
                                             android_color_transform_t /*hint*/) {
   DTRACE_SCOPED();
   auto status = HWC2::Error::None;
-  double color_matrix[kColorTransformMatrixCount] = {0};
-  double white_point_compensated_color_matrix[kColorTransformMatrixCount] = {0};
-  CopyColorTransformMatrix(matrix, color_matrix);
+  double color_matrix_restore[kColorTransformMatrixCount] = {0};
+  CopyColorTransformMatrix(color_matrix_, color_matrix_restore);
 
-  if (white_point_compensated_)
-    ApplyWhitePointCompensationToMatrix(white_point_compensated_color_matrix, color_matrix);
+  CopyColorTransformMatrix(matrix, color_matrix_);
 
-  DisplayError error = display_intf_->SetColorTransform(kColorTransformMatrixCount,
-                                                        NeedWhitePointCompensated() ?
-                                                        white_point_compensated_color_matrix :
-                                                        color_matrix);
+  DisplayError error =
+      display_intf_->SetColorTransform(kColorTransformMatrixCount, PickTransferMatrix());
   if (error != kErrorNone) {
+    CopyColorTransformMatrix(color_matrix_restore, color_matrix_);
     DLOGE("Failed to set Color Transform Matrix");
     status = HWC2::Error::Unsupported;
   }
-  CopyColorTransformMatrix(matrix, color_matrix_);
-
-  if (white_point_compensated_)
-    CopyColorTransformMatrix(white_point_compensated_color_matrix, white_point_compensated_color_matrix_);
 
   return status;
 }
@@ -418,16 +525,16 @@ void HWCColorMode::Dump(std::ostringstream* os) {
   }
   *os << "current mode: " << static_cast<uint32_t>(current_color_mode_) << std::endl;
   *os << "current render_intent: " << static_cast<uint32_t>(current_render_intent_) << std::endl;
-  *os << "Need white point compensated: " <<  NeedWhitePointCompensated() << ",RGB:["
-      << std::fixed << std::setprecision(4)
-      << compensated_red_ratio_ << ","
-      << compensated_green_ratio_ << ","
-      << compensated_blue_ratio_ << "] "<< std::endl;
+  *os << "Need WhiteCompensation: "
+      << (current_render_intent_ == RenderIntent::ENHANCE && HasWhiteCompensation()) << std::endl;
+  *os << "Need SaturationCompensation: "
+      << (current_render_intent_ == RenderIntent::ENHANCE && HasSaturationCompensation())
+      << std::endl;
 
   *os << "current transform: ";
   double color_matrix[kColorTransformMatrixCount] = {0};
 
-  CopyColorTransformMatrix(GetTransferMatrix(), color_matrix);
+  CopyColorTransformMatrix(PickTransferMatrix(), color_matrix);
 
   for (uint32_t i = 0; i < kColorTransformMatrixCount; i++) {
     if (i % 4 == 0) {
