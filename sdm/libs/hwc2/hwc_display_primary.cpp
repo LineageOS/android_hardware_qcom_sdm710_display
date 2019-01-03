@@ -73,6 +73,10 @@ void HWCDisplayPrimary::PMICInterface::Deinit() {
 
 DisplayError HWCDisplayPrimary::PMICInterface::Notify(bool secure_display_start) {
   std::string str_sd_start = secure_display_start ? std::to_string(1) : std::to_string(0);
+  if (fd_lcd_bias_ < 0 || fd_wled_ < 0) {
+    DLOGI("Ignore notify because fd_lcd_bias_ or fd_wled_ open failed");
+    return kErrorNotSupported;
+  }
   ssize_t err = ::pwrite(fd_lcd_bias_, str_sd_start.c_str(), str_sd_start.length(), 0);
   if (err <= 0) {
     DLOGE("Write failed for lcd_bias, Error = %s", strerror(errno));
