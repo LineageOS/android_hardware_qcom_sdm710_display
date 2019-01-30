@@ -1360,7 +1360,7 @@ android::status_t HWCSession::notifyCallback(uint32_t command, const android::Pa
         DLOGE("QService command = %d: input_parcel needed.", command);
         break;
       }
-      status = SetWhitePointCompensation(input_parcel);
+      status = SetWhiteCompensation(input_parcel);
       break;
 
     default:
@@ -1559,12 +1559,12 @@ android::status_t HWCSession::SetColorModeOverride(const android::Parcel *input_
   return 0;
 }
 
-android::status_t HWCSession::SetWhitePointCompensation(const android::Parcel *input_parcel) {
+android::status_t HWCSession::SetWhiteCompensation(const android::Parcel *input_parcel) {
   auto display = static_cast<hwc2_display_t >(input_parcel->readInt32());
   auto enabled = static_cast<bool >(input_parcel->readInt32());
   auto device = static_cast<hwc2_device_t *>(this);
 
-  auto err = CallDisplayFunction(device, display, &HWCDisplay::SetWhitePointCompensation, enabled);
+  auto err = CallDisplayFunction(device, display, &HWCDisplay::SetWhiteCompensation, enabled);
   if (err != HWC2_ERROR_NONE)
     return -EINVAL;
 
